@@ -1,0 +1,59 @@
+#!/usr/bin/env ruby
+
+require 'octokit'
+require 'faraday-http-cache'
+
+stack = Faraday::RackBuilder.new do |builder|
+  builder.use Faraday::HttpCache
+  builder.use Octokit::Response::RaiseError
+  builder.use :http_cache, shared_cache: false
+  builder.adapter Faraday.default_adapter
+end
+Octokit.middleware = stack
+
+# Provide authentication credentials
+token = ENV['GITHUB_TOKEN']
+client = Octokit::Client.new(:access_token => token)
+
+results = client.search_issues("is:pr author:jhoblitt is:merged")
+#results = client.search_issues("is:pr author:jhoblitt is:merged language:puppet")
+
+total_count = results.total_count
+
+last_response = client.last_response
+number_of_pages = last_response.rels[:last].href.match(/page=(\d+)$/)[1]
+
+puts last_response.rels[:last].href
+puts "There are #{total_count} results, on #{number_of_pages} pages!"
+
+#puts "And here's the first path for every set"
+
+#p last_response.data.rels[:items] #items.first.rels[:pull_request] #.rels[:url].get
+#p last_response.data.items.first.pull_request.url.get
+#p last_response.rels
+prs = last_response.data.items.collect {|i| i.pull_request.url }
+#puts last_response.data.items.first.url
+until last_response.rels[:next].nil?
+  last_response = last_response.rels[:next].get
+  prs += last_response.data.items.collect {|i| i.pull_request.url }
+  #puts last_response.data.items.first.url
+end
+
+# trim pulls/XXX from end of url
+prs.collect! {|pr| pr.sub(/pulls\/.*/, '') }
+prs.uniq!
+
+puts "total #{prs.size}"
+
+other = prs.reject {|pr| pr =~ /jhoblitt/}
+
+puts "orher #{other.size}"
+require 'pp'
+
+pp other
+
+puppet = other.grep(/puppet/)
+
+puts "puppet #{puppet.size}"
+
+puts puppet
